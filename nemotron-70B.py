@@ -1,6 +1,8 @@
+from flask import Flask, request, jsonify, render_template
 import json
-import streamlit as st
 from openai import OpenAI
+
+app = Flask(__name__)
 
 # Initialize the OpenAI client
 client = OpenAI(
@@ -12,11 +14,8 @@ client = OpenAI(
 try:
     with open('output.json', 'r') as file:
         responses = json.load(file)
-except FileNotFoundError:
-    responses = {}  # Initialize an empty dictionary if the file does not exist
-except json.JSONDecodeError:
-    print("Error decoding JSON from output.json. Starting with an empty dictionary.")
-    responses = {}
+except (FileNotFoundError, json.JSONDecodeError):
+    responses = {}  # Initialize an empty dictionary if the file does not exist or is invalid
 
 def save_chat_to_json(user_input, bot_response):
     # Append the new chat entry to the responses dictionary
@@ -43,28 +42,29 @@ def answer_to_query(query):
 
     return full_answer if full_answer else "No response received."  # Return full answer or a fallback message
 
-# Streamlit user interface
-def chatbot_ui():
-    st.title("Chatbot Interface")
-    st.write("Hello! I'm your chatbot. Type your command below.")
+@app.route('/')
+def index():
+    return render_template('index.html')  # Serve the HTML template for the chatbot interface
 
-    user_input = st.text_input("You:", "")
-    
-    if st.button("Send"):
-        if user_input.lower().strip() == 'exit':
-            st.write("chatbot: Goodbye!")
-            st.stop()
-        
-        # Check if the command is in the responses dictionary
-        if user_input in responses:
-            answer = responses[user_input]
-            st.write(f"chatbot: {answer}")
-        else:
-            # Generate a response using the OpenAI client
-            nvidia_answer = answer_to_query(user_input)
-            st.write(f"chatbot: {nvidia_answer}")
-            # Save the new chat entry to the JSON file
-            save_chat_to_json(user_input, nvidia_answer)
+@app.route('/chat', methods=['POST'])
+def chat():
+    user_input = request.json.get('user_input')
+    if not user_input:
+        return jsonify({"error": "No input provided."}), 400
+
+    if user_input.lower().strip() == 'exit':
+        return jsonify({"response": "Goodbye!"})
+
+    # Check if the command is in the responses dictionary
+    if user_input in responses:
+        answer = responses[user_input]
+    else:
+        # Generate a response using the OpenAI client
+        answer = answer_to_query(user_input)
+        # Save the new chat entry to the JSON file
+        save_chat_to_json(user_input, answer)
+
+    return jsonify({"response": answer})
 
 if __name__ == "__main__":
-    chatbot_ui()
+    app.run(debug=True)
